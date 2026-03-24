@@ -35,6 +35,50 @@ app.use("/api", healthRouter)
 app.use("/api", coursesRouter)
 app.use("/api", validatorRouter)
 app.use("/api", eventsRouter)
+const isProduction = env.NODE_ENV === "production";
+
+let jwtPrivateKey = env.JWT_PRIVATE_KEY;
+let jwtPublicKey = env.JWT_PUBLIC_KEY;
+
+if (!jwtPrivateKey || !jwtPublicKey) {
+  if (isProduction) {
+    throw new Error(
+      "JWT_PRIVATE_KEY and JWT_PUBLIC_KEY are required in production"
+    );
+  }
+  const pair = generateEphemeralDevJwtKeys();
+  jwtPrivateKey = pair.privateKeyPem;
+  jwtPublicKey = pair.publicKeyPem;
+  console.warn(
+    "[learnvault] JWT: using ephemeral RSA keys (dev only). Add JWT_PRIVATE_KEY / JWT_PUBLIC_KEY to server/.env for stable tokens across restarts."
+  );
+}
+
+const nonceStore = createNonceStore(env.REDIS_URL);
+const jwtService = createJwtService(jwtPrivateKey, jwtPublicKey);
+const authService = createAuthService(nonceStore, jwtService);
+
+const app = express();
+
+const openApiSpec = buildOpenApiSpec();
+const openApiYaml = YAML.stringify(openApiSpec);
+
+app.set("trust proxy", 1);
+
+app.use(morgan("dev"));
+app.use(cors({ origin: env.CORS_ORIGIN }));
+app.use(express.json());
+app.use(globalLimiter);
+
+app.use("/api", healthRouter);
+app.use("/api/auth", createAuthRouter(authService));
+app.use("/api", createMeRouter(jwtService));
+app.use("/api", coursesRouter);
+app.use("/api", validatorRouter);
+app.use("/api", eventsRouter);
+app.use("/api", commentsRouter);
+app.use("/api", adminMilestonesRouter);
+
 
 app.get("/api/docs", (_req, res) => {
 	res.type("application/yaml").send(openApiYaml)

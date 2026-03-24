@@ -52,6 +52,23 @@ pub enum DataKey {
 }
 
 // ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+/// Emitted on every successful `mint` call.
+///
+/// Fields:
+/// - `learner`   — the address that received LRN
+/// - `amount`    — the number of LRN tokens minted
+/// - `course_id` — the course identifier that triggered the mint
+#[contractevent]
+pub struct MilestoneCompleted {
+    pub learner: Address,
+    pub amount: i128,
+    pub course_id: String,
+}
+
+// ---------------------------------------------------------------------------
 // Contract
 // ---------------------------------------------------------------------------
 
@@ -70,7 +87,7 @@ pub struct LRNMinted {
 impl LearnToken {
     /// Initialise the contract.
     ///
-    /// Must be called once by the deployer.  `admin` should be set to the
+    /// Must be called once by the deployer. `admin` should be set to the
     /// `CourseMilestone` contract address once that is deployed.
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&ADMIN_KEY) {
@@ -103,12 +120,14 @@ impl LearnToken {
             panic_with_error!(&env, LRNError::ZeroAmount);
         }
 
+        // Update balance
         let balance_key = DataKey::Balance(to.clone());
         let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
         env.storage()
             .persistent()
             .set(&balance_key, &(current_balance + amount));
 
+        // Update total supply
         let total_supply: i128 = env
             .storage()
             .instance()
@@ -147,6 +166,16 @@ impl LearnToken {
             .unwrap_or(0)
     }
 
+    /// Returns the learner's on-chain reputation score.
+    ///
+    /// Mirrors `balance` — the LRN balance IS the reputation score.
+    pub fn reputation_score(env: Env, account: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Balance(account))
+            .unwrap_or(0)
+    }
+
     pub fn total_supply(env: Env) -> i128 {
         env.storage()
             .instance()
@@ -155,7 +184,10 @@ impl LearnToken {
     }
 
     pub fn decimals(env: Env) -> u32 {
-        env.storage().instance().get(&DECIMALS_KEY).unwrap_or(7)
+        env.storage()
+            .instance()
+            .get(&DECIMALS_KEY)
+            .unwrap_or(7)
     }
 
     pub fn name(env: Env) -> String {
@@ -194,7 +226,7 @@ impl LearnToken {
         panic_with_error!(&env, LRNError::Soulbound)
     }
 
-    pub fn allowance(env: Env, _from: Address, _spender: Address) -> i128 {
+    pub fn allowance(_env: Env, _from: Address, _spender: Address) -> i128 {
         0
     }
 }
